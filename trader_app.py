@@ -57,21 +57,19 @@ with col2:
 
 use_ai = st.checkbox("Enable AI direction prediction", value=False)
 
+st.subheader("🔐 Risk Management")
+
+use_risk = st.checkbox("Enable Stop-Loss / Take-Profit", value=True)
+
+stop_loss_pct = st.number_input(
+    "Stop-Loss (%)", min_value=1.0, max_value=30.0, value=5.0, step=0.5
+)
+
+take_profit_pct = st.number_input(
+    "Take-Profit (%)", min_value=1.0, max_value=50.0, value=10.0, step=0.5
+)
+
 st.subheader("💰 Portfolio & Costs")
-
-col_r1, col_r2 = st.columns(2)
-
-with col_r1:
-    use_stop_loss = st.checkbox("Enable Stop-Loss", value=True)
-    stop_loss_pct = st.number_input(
-        "Stop-Loss %", min_value=1.0, max_value=50.0, value=5.0, step=0.5
-    ) if use_stop_loss else None
-
-with col_r2:
-    use_take_profit = st.checkbox("Enable Take-Profit", value=False)
-    take_profit_pct = st.number_input(
-        "Take-Profit %", min_value=1.0, max_value=100.0, value=10.0, step=0.5
-    ) if use_take_profit else None
 
 col3, col4 = st.columns(2)
 
@@ -123,7 +121,7 @@ def preprocess_ohlc(df: pd.DataFrame) -> pd.DataFrame:
 
 def add_display_enhancements(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    emoji = {"BUY": "🟢 BUY", "SELL": "🔴 SELL", "HOLD": "🟡 HOLD"}
+    emoji = {"BUY": "🟢 BUY", "SELL": "🔴 SELL", "HOLD": "🟡 HOLD", "SL": "🛑 STOP-LOSS", "TP": "🎯 TAKE-PROFIT"}
     df["signal_display"] = df["signal"].map(emoji).fillna("⚪")
     df["date_display"] = df["date"].dt.strftime("%m-%d-%Y")
     return df
@@ -177,6 +175,9 @@ if st.button("Run Strategy"):
                     vol_window=vol_window,
                     max_vol_pct=max_vol_pct,
                     trade_cost_bps=trade_cost_bps,
+                    stop_loss_pct=stop_loss_pct,
+                    take_profit_pct=take_profit_pct,
+                    use_risk=use_risk,
                 )
             except KeyError as e:
                 st.error(f"{ticker}: Missing needed columns: {e}")
@@ -230,6 +231,13 @@ if st.button("Run Strategy"):
                 s=80,
                 label="SELL",
             )
+
+            # Risk management markers
+            sl_points = df[df["signal"] == "SL"]
+            tp_points = df[df["signal"] == "TP"]
+
+            ax.scatter(sl_points["date"], sl_points[price_col], marker="X", color="red", s=120, label="Stop-Loss")
+            ax.scatter(tp_points["date"], tp_points[price_col], marker="P", color="green", s=120, label="Take-Profit")
 
             ax.set_title(f"{ticker} — SMA Strategy with Signals")
             ax.set_xlabel("Date")

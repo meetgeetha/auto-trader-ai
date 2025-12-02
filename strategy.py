@@ -57,6 +57,8 @@ def apply_sma_crossover(
     trade_cost_bps: int = 0,
     stop_loss_pct: float | None = None,    # e.g. 5.0 for 5%
     take_profit_pct: float | None = None,  # e.g. 10.0 for 10%
+    use_risk: bool = False,
+    **kwargs
 ) -> tuple[pd.DataFrame, str]:
     df = df.copy()
 
@@ -137,17 +139,25 @@ def apply_sma_crossover(
             entry_price = None
             daily_ret -= cost  # pay exit cost
 
-        # risk controls: evaluate only if in position
-        if position == 1 and entry_price is not None:
+        # risk controls: evaluate only if in position and risk management enabled
+        if position == 1 and entry_price is not None and use_risk:
             move_from_entry = (price_now / entry_price) - 1.0
 
             hit_sl = (stop_loss_pct is not None) and (move_from_entry <= -stop_loss_pct / 100.0)
             hit_tp = (take_profit_pct is not None) and (move_from_entry >= take_profit_pct / 100.0)
 
-            if hit_sl or hit_tp:
+            if hit_sl:
                 new_position = 0
                 entry_price = None
                 daily_ret -= cost  # exit cost on forced close
+                # Update signal to indicate stop loss
+                df.at[df.index[i], "signal"] = "SL"
+            elif hit_tp:
+                new_position = 0
+                entry_price = None
+                daily_ret -= cost  # exit cost on forced close
+                # Update signal to indicate take profit
+                df.at[df.index[i], "signal"] = "TP"
 
         strat_ret = daily_ret * position  # use *previous* position
         last_equity = equity_curve[-1]
@@ -160,8 +170,16 @@ def apply_sma_crossover(
         position = new_position
 
     df["position"] = pd.Series(positions, index=df.index)
-    df["strategy_returns"] = [0.0] + strat_returns
-    df["equity_curve"] = equity_curve
+    
+    # Calculate returns and strategy performance using vectorized approach
+    df["returns"] = df[price_col].pct_change()
+    df["strategy_returns"] = df["returns"] * df["position"]
+
+    # Apply trade cost at transitions
+    cost_factor = 1 - (trade_cost_bps / 10000)
+    df.loc[df["position"].diff() != 0, "strategy_returns"] *= cost_factor
+
+    df["equity_curve"] = (1 + df["strategy_returns"]).cumprod()
 
     # Net of costs already baked in
     df["strategy_returns_net"] = df["strategy_returns"]
